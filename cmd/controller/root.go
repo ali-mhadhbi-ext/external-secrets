@@ -32,7 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-
 	esv1 "github.com/external-secrets/external-secrets/apis/externalsecrets/v1"
 	esv1alpha1 "github.com/external-secrets/external-secrets/apis/externalsecrets/v1alpha1"
 	genv1alpha1 "github.com/external-secrets/external-secrets/apis/generators/v1alpha1"
@@ -92,6 +91,7 @@ var (
 	certLookaheadInterval                 time.Duration
 	tlsCiphers                            string
 	tlsMinVersion                         string
+	watchNamespaces						  []string
 )
 
 const (
@@ -152,10 +152,18 @@ var rootCmd = &cobra.Command{
 			LeaderElection:   enableLeaderElection,
 			LeaderElectionID: "external-secrets-controller",
 		}
+		// Namespaced mode takes precedence
 		if namespace != "" {
 			mgrOpts.Cache.DefaultNamespaces = map[string]cache.Config{
 				namespace: {},
 			}
+		} else if len(watchNamespaces) > 0 {
+			// Cluster-scoped mode but limited to specific namespaces
+			nsMap := make(map[string]cache.Config, len(watchNamespaces))
+			for _, ns := range watchNamespaces {
+				nsMap[ns] = cache.Config{}
+			}
+			mgrOpts.Cache.DefaultNamespaces = nsMap
 		}
 		mgr, err := ctrl.NewManager(config, mgrOpts)
 		if err != nil {
@@ -329,6 +337,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&enableFloodGate, "enable-flood-gate", true, "Enable flood gate. External secret will be reconciled only if the ClusterStore or Store have an healthy or unknown state.")
 	rootCmd.Flags().BoolVar(&enableGeneratorState, "enable-generator-state", true, "Whether the Controller should manage GeneratorState")
 	rootCmd.Flags().BoolVar(&enableExtendedMetricLabels, "enable-extended-metric-labels", false, "Enable recommended kubernetes annotations as labels in metrics.")
+	rootCmd.Flags().StringSliceVar(&watchNamespaces, "watch-namespaces", nil, "Comma-separated list of namespaces to limit ESO to watch only the provided list of namespaces when deployed in cluster wide mode instead of watching all the namespaces which is the default behavior")
 	fs := feature.Features()
 	for _, f := range fs {
 		rootCmd.Flags().AddFlagSet(f.Flags)

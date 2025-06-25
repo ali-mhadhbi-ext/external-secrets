@@ -59,6 +59,9 @@ spec:
           {{- if .Values.scopedNamespace }}
           - --namespace={{ .Values.scopedNamespace }}
           {{- end }}
+          {{- if .Values.watchNamespaces }}
+          - --watch-namespaces={{join "," .Values.watchNamespaces}}
+          {{- end }}
           {{- if and .Values.scopedNamespace .Values.scopedRBAC }}
           - --enable-cluster-store-reconciler=false
           - --enable-cluster-external-secret-reconciler=false
