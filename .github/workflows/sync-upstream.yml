@@ -79,26 +79,63 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Ensure we see latest origin state to avoid non-fast-forward push
+          git fetch origin --prune
+
           IFS=',' read -ra BR_LIST <<< "${BRANCHES}"
           for BR in "${BR_LIST[@]}"; do
             BR=$(echo "$BR" | xargs)
             [ -z "$BR" ] && continue
-            if git show-ref --verify --quiet "refs/remotes/upstream/${BR}"; then
+
+            # Prepare local branch starting from origin/BR if it exists
+            if git show-ref --verify --quiet "refs/remotes/origin/${BR}"; then
               if git show-ref --verify --quiet "refs/heads/${BR}"; then
                 git checkout "$BR"
               else
-                git checkout -b "$BR" "upstream/${BR}"
+                git checkout -b "$BR" "origin/${BR}"
               fi
+              # Reset to remote to make subsequent push fast-forward
+              git reset --hard "origin/${BR}"
+            else
+              # No origin branch yet: try to create it from upstream if present
+              if git show-ref --verify --quiet "refs/remotes/upstream/${BR}"; then
+                git checkout -B "$BR" "upstream/${BR}"
+              else
+                echo "Neither origin/${BR} nor upstream/${BR} exists; skipping."
+                continue
+              fi
+            fi
+
+            # Integrate upstream changes
+            if git show-ref --verify --quiet "refs/remotes/upstream/${BR}"; then
               if [ "${SYNC_MODE}" = "merge" ]; then
-                # Try fast-forward; fallback to a merge commit
                 git merge --ff-only "upstream/${BR}" || git merge --no-ff "upstream/${BR}"
               else
-                # Rebase keeps a linear history and preserves local-only commits (e.g., workflow files)
                 git rebase "upstream/${BR}" || { echo "Rebase failed, falling back to merge"; git rebase --abort || true; git merge --no-ff "upstream/${BR}"; }
               fi
-              git push origin "$BR"
             else
-              echo "Upstream branch '${BR}' not found; skipping."
+              echo "Upstream branch '${BR}' not found; skipping upstream integration."
+            fi
+
+            # Attempt fast-forward push; if rejected, reconcile and use a safe lease
+            remote_sha="$(git rev-parse -q --verify "origin/${BR}" || echo -n)"
+            if git push origin "$BR"; then
+              echo "Pushed ${BR}."
+            else
+              echo "Non-fast-forward push detected for ${BR}, reconciling with latest origin..."
+              git fetch origin "$BR" --quiet || true
+              if git show-ref --verify --quiet "refs/remotes/origin/${BR}"; then
+                if [ "${SYNC_MODE}" = "merge" ]; then
+                  git merge --ff-only "origin/${BR}" || git merge --no-ff "origin/${BR}"
+                else
+                  git rebase "origin/${BR}" || { echo "Rebase onto origin failed; aborting rebase."; git rebase --abort || true; }
+                fi
+              fi
+              # Final attempt with --force-with-lease to avoid overwriting concurrent updates
+              if ! git push --force-with-lease="${BR}:${remote_sha}" origin "$BR"; then
+                echo "Push still rejected for ${BR}. Remote moved since fetch; will retry on next run." >&2
+                # Do not fail the whole workflow due to a race; continue to next branch
+              fi
             fi
           done
 
@@ -117,6 +154,7 @@ jobs:
         shell: bash
         run: |
           echo "Notes:"
-          echo "- This workflow syncs selected branches using ${SYNC_MODE} and keeps local-only files (e.g., .github/workflows)."
-          echo "- Provide MIRROR_PAT (classic PAT with 'repo' + 'workflow' scopes) if your push ever rewrites commits that touch workflow files."
+          echo "- This workflow resets local branches to origin, integrates upstream via ${SYNC_MODE}, and keeps local-only files (e.g., .github/workflows)."
+          echo "- It handles non-fast-forward cases and uses --force-with-lease as a safe fallback to avoid clobbering concurrent updates."
+          echo "- Provide MIRROR_PAT (classic PAT with 'repo' + 'workflow' scopes) if your push rewrites commits that touch workflow files."
           echo "- Adjust BRANCHES if you want to sync more branches; set PUSH_TAGS=false to skip tags."
