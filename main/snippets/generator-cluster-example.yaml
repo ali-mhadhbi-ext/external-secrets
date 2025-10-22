@@ -3,7 +3,7 @@ kind: ExternalSecret
 metadata:
   name: "cluster-secret"
 spec:
-  refreshInterval: "1h0m0s"
+  refreshInterval: "1h"
   target:
     name: cluster-secret
   dataFrom:

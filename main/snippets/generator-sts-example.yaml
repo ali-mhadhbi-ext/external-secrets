@@ -3,7 +3,7 @@ kind: ExternalSecret
 metadata:
   name: "sts-secret"
 spec:
-  refreshInterval: "1h0m0s"
+  refreshInterval: "1h"
   target:
     name: sts-secret
   dataFrom:
