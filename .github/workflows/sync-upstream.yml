@@ -1,0 +1,122 @@
+# GitHub Actions workflow to automatically synchronize a fork
+# with its upstream repository. This pushes all branches and all tags
+# from upstream to your fork (origin) faithfully.
+#
+# How to use:
+# 1) Replace OWNER/REPO below with the public repository you want to track.
+# 2) Commit this file in your fork (under .github/workflows/).
+# 3) The workflow runs every 15 minutes (editable) and can be triggered manually.
+# 4) Check the Actions tab for runs and logs.
+
+name: Sync upstream to fork (preserve local workflows)
+
+on:
+  schedule:
+    # Cron: every 15 minutes (UTC). Adjust as needed.
+    - cron: "*/15 * * * *"
+  # Allow triggering the workflow manually from the UI.
+  workflow_dispatch: {}
+
+# Grant the internal GITHUB_TOKEN permission to push to the fork.
+permissions:
+  contents: write
+
+# URL of the upstream to mirror (replace OWNER/REPO)
+env:
+  # Upstream repository to sync from. Accepts either OWNER/REPO or full https URL.
+  # Example: external-secrets/external-secrets OR https://github.com/external-secrets/external-secrets.git
+  UPSTREAM: external-secrets/external-secrets
+  # Comma-separated list of branches to sync (default: main). Typical use: main only.
+  BRANCHES: main
+  # Sync mode: rebase (default) keeps a linear history and preserves local-only files (like workflows);
+  # set to merge to use merge commits instead.
+  SYNC_MODE: rebase
+  # Whether to push tags from upstream as well.
+  PUSH_TAGS: "true"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out this repository (the fork)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git author
+        shell: bash
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Prepare remotes and optional PAT for pushing
+        shell: bash
+        env:
+          MIRROR_PAT: ${{ secrets.MIRROR_PAT }}
+          MIRROR_USER: ${{ secrets.MIRROR_USER }}
+        run: |
+          set -euo pipefail
+          # Normalize UPSTREAM to a full URL if needed
+          if [[ "${UPSTREAM}" != http* ]]; then
+            UPSTREAM_URL="https://github.com/${UPSTREAM}.git"
+          else
+            UPSTREAM_URL="${UPSTREAM}"
+          fi
+          if git remote get-url upstream >/dev/null 2>&1; then
+            git remote set-url upstream "$UPSTREAM_URL"
+          else
+            git remote add upstream "$UPSTREAM_URL"
+          fi
+          git fetch --prune upstream "refs/heads/*:refs/remotes/upstream/*" --tags
+
+          # If a PAT is provided, use it to ensure pushes that touch workflow files are allowed
+          if [ -n "${MIRROR_PAT:-}" ]; then
+            USERNAME="${MIRROR_USER:-gh-mirror}"
+            git remote set-url origin "https://${USERNAME}:${MIRROR_PAT}@github.com/${GITHUB_REPOSITORY}.git"
+          fi
+
+      - name: Sync branches without deleting local-only files (rebase/merge)
+        shell: bash
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra BR_LIST <<< "${BRANCHES}"
+          for BR in "${BR_LIST[@]}"; do
+            BR=$(echo "$BR" | xargs)
+            [ -z "$BR" ] && continue
+            if git show-ref --verify --quiet "refs/remotes/upstream/${BR}"; then
+              if git show-ref --verify --quiet "refs/heads/${BR}"; then
+                git checkout "$BR"
+              else
+                git checkout -b "$BR" "upstream/${BR}"
+              fi
+              if [ "${SYNC_MODE}" = "merge" ]; then
+                # Try fast-forward; fallback to a merge commit
+                git merge --ff-only "upstream/${BR}" || git merge --no-ff "upstream/${BR}"
+              else
+                # Rebase keeps a linear history and preserves local-only commits (e.g., workflow files)
+                git rebase "upstream/${BR}" || { echo "Rebase failed, falling back to merge"; git rebase --abort || true; git merge --no-ff "upstream/${BR}"; }
+              fi
+              git push origin "$BR"
+            else
+              echo "Upstream branch '${BR}' not found; skipping."
+            fi
+          done
+
+      - name: Push tags (optional)
+        if: env.PUSH_TAGS == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fetch latest tags from upstream (already fetched above, but refresh defensively)
+          git fetch upstream --tags --force
+          # Push tags to origin without pruning existing tags created locally
+          git push origin --tags
+
+      - name: Notes
+        if: always()
+        shell: bash
+        run: |
+          echo "Notes:"
+          echo "- This workflow syncs selected branches using ${SYNC_MODE} and keeps local-only files (e.g., .github/workflows)."
+          echo "- Provide MIRROR_PAT (classic PAT with 'repo' + 'workflow' scopes) if your push ever rewrites commits that touch workflow files."
+          echo "- Adjust BRANCHES if you want to sync more branches; set PUSH_TAGS=false to skip tags."
