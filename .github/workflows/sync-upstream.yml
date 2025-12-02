@@ -11,10 +11,7 @@
 name: Sync upstream to fork (preserve local workflows)
 
 on:
-  schedule:
-    # Cron: every 15 minutes (UTC). Adjust as needed.
-    - cron: "*/15 * * * *"
-  # Allow triggering the workflow manually from the UI.
+
   workflow_dispatch: {}
 
 # Grant the internal GITHUB_TOKEN permission to push to the fork.
