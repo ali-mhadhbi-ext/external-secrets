@@ -626,6 +626,9 @@
         "topologySpreadConstraints": {
             "type": "array"
         },
+        "watchNamespaces": {
+            "type": "array"
+        },
         "webhook": {
             "type": "object",
             "properties": {
