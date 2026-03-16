@@ -1,0 +1,66 @@
+name: Trigger GitLab pipeline
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  trigger_gitlab:
+    name: Trigger GitLab pipeline
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger GitLab pipeline
+        env:
+          GITLAB_BASE_URL: ${{ secrets.GITLAB_BASE_URL }}
+          GITLAB_PROJECT_ID: ${{ secrets.GITLAB_PROJECT_ID }}
+          GITLAB_TRIGGER_TOKEN: ${{ secrets.GITLAB_TRIGGER_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+
+          GITLAB_BASE_URL="$(printf '%s' "$GITLAB_BASE_URL" | tr -d '\r\n')"
+          GITLAB_PROJECT_ID="$(printf '%s' "$GITLAB_PROJECT_ID" | tr -d '\r\n[:space:]')"
+          GITLAB_TRIGGER_TOKEN="$(printf '%s' "$GITLAB_TRIGGER_TOKEN" | tr -d '\r\n')"
+
+          : "${GITLAB_BASE_URL:?missing secret GITLAB_BASE_URL}"
+          : "${GITLAB_PROJECT_ID:?missing secret GITLAB_PROJECT_ID}"
+          : "${GITLAB_TRIGGER_TOKEN:?missing secret GITLAB_TRIGGER_TOKEN}"
+
+          RELEASE_TAG="$(printf '%s' "$PR_TITLE" | sed -n 's/.*@\([^ ]\+\)$/\1/p')"
+
+          echo "base_url=$GITLAB_BASE_URL"
+          echo "project_id=$GITLAB_PROJECT_ID"
+          echo "token_length=${#GITLAB_TRIGGER_TOKEN}"
+          echo "repo=$REPO"
+          echo "sha=$SHA"
+          echo "release_tag=$RELEASE_TAG"
+
+          response_file="$(mktemp)"
+          http_code="$(
+            curl --show-error --silent \
+              --output "$response_file" \
+              --write-out "%{http_code}" \
+              -H "Accept: application/json" \
+              -F token="$GITLAB_TRIGGER_TOKEN" \
+              -F "ref=feature/release-eso-sync" \
+              -F "variables[PACKAGE_HELM]=true" \
+              -F "variables[GITHUB_REPO]=$REPO" \
+              -F "variables[GITHUB_SHA]=$SHA" \
+              -F "variables[RELEASE_TAG]=$RELEASE_TAG" \
+              "$GITLAB_BASE_URL/api/v4/projects/$GITLAB_PROJECT_ID/trigger/pipeline"
+          )"
+
+          echo "http_status=$http_code"
+          echo "response_body:"
+          cat "$response_file" || true
+
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "GitLab trigger failed with HTTP $http_code" >&2
+            exit 1
+          fi

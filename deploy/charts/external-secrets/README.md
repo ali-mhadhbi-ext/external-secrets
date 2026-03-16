@@ -216,6 +216,7 @@ The command removes all the Kubernetes components associated with the chart and 
 | systemAuthDelegator | bool | `false` | If true the system:auth-delegator ClusterRole will be added to RBAC |
 | tolerations | list | `[]` |  |
 | topologySpreadConstraints | list | `[]` |  |
+| watchNamespaces | list | `[]` | If set, the controller will watch only the provided namespaces, reconcile external secrets only in those namespaces, and implicitly disable cluster stores, cluster external secrets and cluster push secrets. If this feature is used and create.rbac is set to true, then a Role and RoleBinding will be deployed in each watched namespace. |
 | webhook.affinity | object | `{}` |  |
 | webhook.annotations | object | `{}` | Annotations to place on validating webhook configuration. |
 | webhook.certCheckInterval | string | `"5m"` | Specifies the time to check if the cert is valid |

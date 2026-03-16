@@ -33,7 +33,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-
 	esv1 "github.com/external-secrets/external-secrets/apis/externalsecrets/v1"
 	esv1alpha1 "github.com/external-secrets/external-secrets/apis/externalsecrets/v1alpha1"
 	genv1alpha1 "github.com/external-secrets/external-secrets/apis/generators/v1alpha1"
@@ -101,6 +100,7 @@ var (
 	tlsMinVersion                         string
 	enableHTTP2                           bool
 	allowGenericTargets                   bool
+	watchNamespaces						  []string
 )
 
 const (
@@ -173,10 +173,18 @@ var rootCmd = &cobra.Command{
 			LeaderElection:   enableLeaderElection,
 			LeaderElectionID: "external-secrets-controller",
 		}
+		// Namespaced mode takes precedence
 		if namespace != "" {
 			mgrOpts.Cache.DefaultNamespaces = map[string]cache.Config{
 				namespace: {},
 			}
+		} else if len(watchNamespaces) > 0 {
+			// Cluster-scoped mode but limited to specific namespaces
+			nsMap := make(map[string]cache.Config, len(watchNamespaces))
+			for _, ns := range watchNamespaces {
+				nsMap[ns] = cache.Config{}
+			}
+			mgrOpts.Cache.DefaultNamespaces = nsMap
 		}
 		mgr, err := ctrl.NewManager(config, mgrOpts)
 		if err != nil {
@@ -353,6 +361,7 @@ func init() {
 		"If set, HTTP/2 will be enabled for the metrics server")
 	rootCmd.Flags().
 		BoolVar(&allowGenericTargets, "unsafe-allow-generic-targets", false, "Enable support for creating generic resources (ConfigMaps, Custom Resources). WARNING: Using generic resources, please sure all policies are correctly configured.")
+	rootCmd.Flags().StringSliceVar(&watchNamespaces, "watch-namespaces", nil, "Comma-separated list of namespaces to limit ESO to watch only the provided list of namespaces when deployed in cluster wide mode instead of watching all the namespaces which is the default behavior")
 	fs := feature.Features()
 	for _, f := range fs {
 		rootCmd.Flags().AddFlagSet(f.Flags)
