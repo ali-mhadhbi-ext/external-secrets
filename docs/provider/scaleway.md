@@ -38,7 +38,7 @@ kind: ExternalSecret
 metadata:
     name: secret
 spec:
-    refreshInterval: 1h
+    refreshInterval: 1h0m0s
     secretStoreRef:
         kind: SecretStore
         name: secret-store
@@ -48,3 +48,43 @@ spec:
           key: id:<SECRET_UUID>
           version: latest_enabled
 ```
+
+### JSON Secret Values
+
+Scaleway Secret Manager supports storing JSON objects as secrets. You can access values using [gjson syntax](https://github.com/tidwall/gjson/blob/master/SYNTAX.md):
+
+Consider the following JSON object that is stored in a Scaleway secret:
+
+```json
+{
+  "first": "Tom", 
+  "last": "Anderson"
+}
+```
+
+This is an example on how you would look up keys in the above JSON object:
+
+```yaml
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: extract-data
+spec:
+  refreshInterval: 1h0m0s
+  secretStoreRef:
+    kind: SecretStore
+    name: secret-store
+  target:
+    name: secret-data
+    creationPolicy: Owner
+  data:
+  - secretKey: first_name
+    remoteRef:
+      key: id:<SECRET_UUID>
+      property: first # Tom
+  - secretKey: last_name
+    remoteRef:
+      key: id:<SECRET_UUID>
+      property: last # Anderson
+```
+

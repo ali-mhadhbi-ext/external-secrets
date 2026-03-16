@@ -10,6 +10,9 @@
             "properties": {
                 "enabled": {
                     "type": "boolean"
+                },
+                "namespaceOverride": {
+                    "type": "string"
                 }
             }
         },
@@ -31,17 +34,26 @@
                 "extraEnv": {
                     "type": "array"
                 },
+                "extraInitContainers": {
+                    "type": "array"
+                },
                 "extraVolumeMounts": {
                     "type": "array"
                 },
                 "extraVolumes": {
                     "type": "array"
                 },
-                "fullnameOverride": {
-                    "type": "string"
+                "hostAliases": {
+                    "type": "array"
                 },
                 "hostNetwork": {
                     "type": "boolean"
+                },
+                "hostUsers": {
+                    "type": [
+                        "boolean",
+                        "null"
+                    ]
                 },
                 "image": {
                     "type": "object",
@@ -101,9 +113,6 @@
                         }
                     }
                 },
-                "nameOverride": {
-                    "type": "string"
-                },
                 "nodeSelector": {
                     "type": "object"
                 },
@@ -121,6 +130,9 @@
                                 "integer",
                                 "string"
                             ]
+                        },
+                        "nameOverride": {
+                            "type": "string"
                         }
                     }
                 },
@@ -228,6 +240,23 @@
                         }
                     }
                 },
+                "startupProbe": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "port": {
+                            "type": "string"
+                        },
+                        "useReadinessProbePort": {
+                            "type": "boolean"
+                        }
+                    }
+                },
+                "strategy": {
+                    "type": "object"
+                },
                 "tolerations": {
                     "type": "array"
                 },
@@ -273,6 +302,12 @@
                 },
                 "createPushSecret": {
                     "type": "boolean"
+                },
+                "createSecretStore": {
+                    "type": "boolean"
+                },
+                "unsafeServeV1Beta1": {
+                    "type": "boolean"
                 }
             }
         },
@@ -288,6 +323,9 @@
         "dnsPolicy": {
             "type": "string"
         },
+        "enableHTTP2": {
+            "type": "boolean"
+        },
         "extendedMetricLabels": {
             "type": "boolean"
         },
@@ -298,6 +336,9 @@
             "type": "array"
         },
         "extraEnv": {
+            "type": "array"
+        },
+        "extraInitContainers": {
             "type": "array"
         },
         "extraObjects": {
@@ -311,6 +352,17 @@
         },
         "fullnameOverride": {
             "type": "string"
+        },
+        "genericTargets": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "resources": {
+                    "type": "array"
+                }
+            }
         },
         "global": {
             "type": "object",
@@ -331,8 +383,23 @@
                         }
                     }
                 },
+                "hostAliases": {
+                    "type": "array"
+                },
+                "imagePullSecrets": {
+                    "type": "array"
+                },
                 "nodeSelector": {
                     "type": "object"
+                },
+                "podAnnotations": {
+                    "type": "object"
+                },
+                "podLabels": {
+                    "type": "object"
+                },
+                "repository": {
+                    "type": "string"
                 },
                 "tolerations": {
                     "type": "array"
@@ -351,6 +418,9 @@
                 "enabled": {
                     "type": "boolean"
                 },
+                "extraLabels": {
+                    "type": "object"
+                },
                 "sidecarLabel": {
                     "type": "string"
                 },
@@ -359,8 +429,17 @@
                 }
             }
         },
+        "hostAliases": {
+            "type": "array"
+        },
         "hostNetwork": {
             "type": "boolean"
+        },
+        "hostUsers": {
+            "type": [
+                "boolean",
+                "null"
+            ]
         },
         "image": {
             "type": "object",
@@ -388,6 +467,54 @@
         "leaderElect": {
             "type": "boolean"
         },
+        "livenessProbe": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "spec": {
+                    "type": "object",
+                    "properties": {
+                        "address": {
+                            "type": "string"
+                        },
+                        "failureThreshold": {
+                            "type": "integer"
+                        },
+                        "httpGet": {
+                            "type": "object",
+                            "properties": {
+                                "path": {
+                                    "type": "string"
+                                },
+                                "port": {
+                                    "type": [
+                                        "string",
+                                        "integer"
+                                    ]
+                                }
+                            }
+                        },
+                        "initialDelaySeconds": {
+                            "type": "integer"
+                        },
+                        "periodSeconds": {
+                            "type": "integer"
+                        },
+                        "port": {
+                            "type": "integer"
+                        },
+                        "successThreshold": {
+                            "type": "integer"
+                        },
+                        "timeoutSeconds": {
+                            "type": "integer"
+                        }
+                    }
+                }
+            }
+        },
         "log": {
             "type": "object",
             "properties": {
@@ -407,6 +534,23 @@
                     "properties": {
                         "port": {
                             "type": "integer"
+                        },
+                        "secure": {
+                            "type": "object",
+                            "properties": {
+                                "certDir": {
+                                    "type": "string"
+                                },
+                                "certFile": {
+                                    "type": "string"
+                                },
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "keyFile": {
+                                    "type": "string"
+                                }
+                            }
                         }
                     }
                 },
@@ -452,6 +596,9 @@
                         "integer",
                         "string"
                     ]
+                },
+                "nameOverride": {
+                    "type": "string"
                 }
             }
         },
@@ -475,6 +622,9 @@
         "processClusterExternalSecret": {
             "type": "boolean"
         },
+        "processClusterGenerator": {
+            "type": "boolean"
+        },
         "processClusterPushSecret": {
             "type": "boolean"
         },
@@ -482,6 +632,9 @@
             "type": "boolean"
         },
         "processPushSecret": {
+            "type": "boolean"
+        },
+        "processSecretStore": {
             "type": "boolean"
         },
         "rbac": {
@@ -615,10 +768,24 @@
                 "relabelings": {
                     "type": "array"
                 },
+                "renderMode": {
+                    "type": "string",
+                    "enum": [
+                        "skipIfMissing",
+                        "failIfMissing",
+                        "alwaysRender"
+                    ]
+                },
                 "scrapeTimeout": {
                     "type": "string"
                 }
             }
+        },
+        "strategy": {
+            "type": "object"
+        },
+        "systemAuthDelegator": {
+            "type": "boolean"
         },
         "tolerations": {
             "type": "array"
@@ -676,11 +843,17 @@
                                         }
                                     }
                                 },
+                                "privateKey": {
+                                    "type": "object"
+                                },
                                 "renewBefore": {
                                     "type": "string"
                                 },
                                 "revisionHistoryLimit": {
                                     "type": "integer"
+                                },
+                                "signatureAlgorithm": {
+                                    "type": "string"
                                 }
                             }
                         },
@@ -701,6 +874,9 @@
                 "extraEnv": {
                     "type": "array"
                 },
+                "extraInitContainers": {
+                    "type": "array"
+                },
                 "extraVolumeMounts": {
                     "type": "array"
                 },
@@ -710,11 +886,17 @@
                 "failurePolicy": {
                     "type": "string"
                 },
-                "fullnameOverride": {
-                    "type": "string"
+                "hostAliases": {
+                    "type": "array"
                 },
                 "hostNetwork": {
                     "type": "boolean"
+                },
+                "hostUsers": {
+                    "type": [
+                        "boolean",
+                        "null"
+                    ]
                 },
                 "image": {
                     "type": "object",
@@ -777,9 +959,6 @@
                         }
                     }
                 },
-                "nameOverride": {
-                    "type": "string"
-                },
                 "nodeSelector": {
                     "type": "object"
                 },
@@ -797,6 +976,9 @@
                                 "integer",
                                 "string"
                             ]
+                        },
+                        "nameOverride": {
+                            "type": "string"
                         }
                     }
                 },
@@ -816,14 +998,6 @@
                 },
                 "priorityClassName": {
                     "type": "string"
-                },
-                "rbac": {
-                    "type": "object",
-                    "properties": {
-                        "create": {
-                            "type": "boolean"
-                        }
-                    }
                 },
                 "readinessProbe": {
                     "type": "object",
@@ -926,6 +1100,9 @@
                             "type": "string"
                         }
                     }
+                },
+                "strategy": {
+                    "type": "object"
                 },
                 "tolerations": {
                     "type": "array"

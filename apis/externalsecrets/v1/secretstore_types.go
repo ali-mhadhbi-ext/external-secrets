@@ -1,9 +1,11 @@
 /*
+Copyright © The ESO Authors
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+    https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,7 +31,7 @@ type SecretStoreSpec struct {
 	// Used to configure the provider. Only one provider may be set
 	Provider *SecretStoreProvider `json:"provider"`
 
-	// Used to configure http retries if failed
+	// Used to configure HTTP retries on failures.
 	// +optional
 	RetrySettings *SecretStoreRetrySettings `json:"retrySettings,omitempty"`
 
@@ -37,7 +39,7 @@ type SecretStoreSpec struct {
 	// +optional
 	RefreshInterval int `json:"refreshInterval,omitempty"`
 
-	// Used to constraint a ClusterSecretStore to specific namespaces. Relevant only to ClusterSecretStore
+	// Used to constrain a ClusterSecretStore to specific namespaces. Relevant only to ClusterSecretStore.
 	// +optional
 	Conditions []ClusterSecretStoreCondition `json:"conditions,omitempty"`
 }
@@ -81,7 +83,7 @@ type SecretStoreProvider struct {
 	// +optional
 	BitwardenSecretsManager *BitwardenSecretsManagerProvider `json:"bitwardensecretsmanager,omitempty"`
 
-	// Vault configures this store to sync secrets using Hashi provider
+	// Vault configures this store to sync secrets using the HashiCorp Vault provider.
 	// +optional
 	Vault *VaultProvider `json:"vault,omitempty"`
 
@@ -105,17 +107,14 @@ type SecretStoreProvider struct {
 	// +optional
 	YandexLockbox *YandexLockboxProvider `json:"yandexlockbox,omitempty"`
 
-	// Github configures this store to push Github Action secrets using Github API provider
+	// Github configures this store to push GitHub Actions secrets using the GitHub API provider.
+	// Note: This provider only supports write operations (PushSecret) and cannot fetch secrets from GitHub
 	// +optional
 	Github *GithubProvider `json:"github,omitempty"`
 
 	// GitLab configures this store to sync secrets using GitLab Variables provider
 	// +optional
 	Gitlab *GitlabProvider `json:"gitlab,omitempty"`
-
-	// Alibaba configures this store to sync secrets using Alibaba Cloud provider
-	// +optional
-	Alibaba *AlibabaProvider `json:"alibaba,omitempty"`
 
 	// OnePassword configures this store to sync secrets using the 1Password Cloud provider
 	// +optional
@@ -141,7 +140,7 @@ type SecretStoreProvider struct {
 	// +optional
 	Senhasegura *SenhaseguraProvider `json:"senhasegura,omitempty"`
 
-	// Scaleway
+	// Scaleway configures this store to sync secrets using the Scaleway provider.
 	// +optional
 	Scaleway *ScalewayProvider `json:"scaleway,omitempty"`
 
@@ -193,9 +192,9 @@ type SecretStoreProvider struct {
 	// +optional
 	Passbolt *PassboltProvider `json:"passbolt,omitempty"`
 
-	// Device42 configures this store to sync secrets using the Device42 provider
+	// DVLS configures this store to sync secrets using Devolutions Server provider
 	// +optional
-	Device42 *Device42Provider `json:"device42,omitempty"`
+	DVLS *DVLSProvider `json:"dvls,omitempty"`
 
 	// Infisical configures this store to sync secrets using the Infisical provider
 	// +optional
@@ -208,18 +207,37 @@ type SecretStoreProvider struct {
 	// CloudruSM configures this store to sync secrets using the Cloud.ru Secret Manager provider
 	// +optional
 	CloudruSM *CloudruSMProvider `json:"cloudrusm,omitempty"`
+
+	// Volcengine configures this store to sync secrets using the Volcengine provider
+	// +optional
+	Volcengine *VolcengineProvider `json:"volcengine,omitempty"`
+
+	// Ngrok configures this store to sync secrets using the ngrok provider.
+	// +optional
+	Ngrok *NgrokProvider `json:"ngrok,omitempty"`
+
+	// Barbican configures this store to sync secrets using the OpenStack Barbican provider
+	// +optional
+	Barbican *BarbicanProvider `json:"barbican,omitempty"`
+
+	// NebiusMysterybox configures this store to sync secrets using NebiusMysterybox provider
+	// +optional
+	NebiusMysterybox *NebiusMysteryboxProvider `json:"nebiusmysterybox,omitempty"`
 }
 
+// CAProviderType defines the type of provider for certificate authority.
 type CAProviderType string
 
+// Supported CA provider types.
 const (
-	CAProviderTypeSecret    CAProviderType = "Secret"
+	// CAProviderTypeSecret indicates that the CA certificate is stored in a Secret resource.
+	CAProviderTypeSecret CAProviderType = "Secret"
+	// CAProviderTypeConfigMap indicates that the CA certificate is stored in a ConfigMap resource.
 	CAProviderTypeConfigMap CAProviderType = "ConfigMap"
 )
 
-// Used to provide custom certificate authority (CA) certificates
-// for a secret store. The CAProvider points to a Secret or ConfigMap resource
-// that contains a PEM-encoded certificate.
+// CAProvider provides a custom certificate authority for accessing the provider's store.
+// The CAProvider points to a Secret or ConfigMap resource that contains a PEM-encoded certificate.
 type CAProvider struct {
 	// The type of provider to use such as "Secret", or "ConfigMap".
 	// +kubebuilder:validation:Enum="Secret";"ConfigMap"
@@ -247,23 +265,30 @@ type CAProvider struct {
 	Namespace *string `json:"namespace,omitempty"`
 }
 
+// SecretStoreRetrySettings defines the retry settings for accessing external secrets manager stores.
 type SecretStoreRetrySettings struct {
 	MaxRetries    *int32  `json:"maxRetries,omitempty"`
 	RetryInterval *string `json:"retryInterval,omitempty"`
 }
 
+// SecretStoreConditionType represents the condition of the SecretStore.
 type SecretStoreConditionType string
 
+// These are valid conditions of a secret store.
 const (
+	// SecretStoreReady indicates that the store is ready and able to serve requests.
 	SecretStoreReady SecretStoreConditionType = "Ready"
 
 	ReasonInvalidStore          = "InvalidStoreConfiguration"
 	ReasonInvalidProviderConfig = "InvalidProviderConfig"
 	ReasonValidationFailed      = "ValidationFailed"
+	ReasonValidationUnknown     = "ValidationUnknown"
 	ReasonStoreValid            = "Valid"
 	StoreUnmaintained           = "StoreUnmaintained"
+	StoreDeprecated             = "StoreDeprecated"
 )
 
+// SecretStoreStatusCondition contains condition information for a SecretStore.
 type SecretStoreStatusCondition struct {
 	Type   SecretStoreConditionType `json:"type"`
 	Status corev1.ConditionStatus   `json:"status"`
@@ -281,9 +306,13 @@ type SecretStoreStatusCondition struct {
 // SecretStoreCapabilities defines the possible operations a SecretStore can do.
 type SecretStoreCapabilities string
 
+// These are the valid capabilities of a secret store.
 const (
-	SecretStoreReadOnly  SecretStoreCapabilities = "ReadOnly"
+	// SecretStoreReadOnly indicates that the store can only read secrets.
+	SecretStoreReadOnly SecretStoreCapabilities = "ReadOnly"
+	// SecretStoreWriteOnly indicates that the store can only write secrets.
 	SecretStoreWriteOnly SecretStoreCapabilities = "WriteOnly"
+	// SecretStoreReadWrite indicates that the store can both read and write secrets.
 	SecretStoreReadWrite SecretStoreCapabilities = "ReadWrite"
 )
 

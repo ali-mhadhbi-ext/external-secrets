@@ -1,9 +1,11 @@
 /*
+Copyright © The ESO Authors
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-	http://www.apache.org/licenses/LICENSE-2.0
+    https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,28 +21,33 @@ import (
 	"errors"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
+// Ensures ExternalSecretValidator implements the admission.CustomValidator interface correctly.
+var _ admission.Validator[*ExternalSecret] = &ExternalSecretValidator{}
+
+// ExternalSecretValidator implements a validating webhook for ExternalSecrets.
 type ExternalSecretValidator struct{}
 
-func (esv *ExternalSecretValidator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
+// ValidateCreate validates the creation of an external secret object.
+func (in *ExternalSecretValidator) ValidateCreate(_ context.Context, obj *ExternalSecret) (warnings admission.Warnings, err error) {
 	return validateExternalSecret(obj)
 }
 
-func (esv *ExternalSecretValidator) ValidateUpdate(_ context.Context, _, newObj runtime.Object) (admission.Warnings, error) {
+// ValidateUpdate validates the update of an external secret object.
+func (in *ExternalSecretValidator) ValidateUpdate(_ context.Context, _, newObj *ExternalSecret) (warnings admission.Warnings, err error) {
 	return validateExternalSecret(newObj)
 }
 
-func (esv *ExternalSecretValidator) ValidateDelete(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
+// ValidateDelete validates the deletion of an external secret object.
+func (in *ExternalSecretValidator) ValidateDelete(_ context.Context, _ *ExternalSecret) (warnings admission.Warnings, err error) {
 	return nil, nil
 }
 
-func validateExternalSecret(obj runtime.Object) (admission.Warnings, error) {
-	es, ok := obj.(*ExternalSecret)
-	if !ok {
-		return nil, errors.New("unexpected type")
+func validateExternalSecret(es *ExternalSecret) (admission.Warnings, error) {
+	if es == nil {
+		return nil, errors.New("external secret cannot be nil during validation")
 	}
 
 	var errs error

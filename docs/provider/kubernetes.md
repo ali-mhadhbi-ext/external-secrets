@@ -2,7 +2,7 @@ External Secrets Operator allows to retrieve secrets from a Kubernetes Cluster -
 
 A `SecretStore` points to a **specific namespace** in the target Kubernetes Cluster. You are able to retrieve all secrets from that particular namespace given you have the correct set of RBAC permissions.
 
-The `SecretStore` reconciler checks if you have read access for secrets in that namespace using `SelfSubjectRulesReview`. See below on how to set that up properly.
+The `SecretStore` reconciler checks if you have read access for secrets in that namespace using `SelfSubjectRulesReview` and will fallback to `SelfSubjectAccessReview` when that fails. See below on how to set that up properly.
 
 ### External Secret Spec
 
@@ -14,7 +14,7 @@ kind: ExternalSecret
 metadata:
   name: database-credentials
 spec:
-  refreshInterval: 1h
+  refreshInterval: 1h0m0s
   secretStoreRef:
     kind: SecretStore
     name: k8s-store             # name of the SecretStore (or kind specified)
@@ -63,7 +63,7 @@ kind: ExternalSecret
 metadata:
   name: fetch-tls-and-nginx
 spec:
-  refreshInterval: 1h
+  refreshInterval: 1h0m0s
   secretStoreRef:
     kind: SecretStore
     name: k8s-store
@@ -82,7 +82,7 @@ spec:
 
 ### Target API-Server Configuration
 
-The servers `url` can be omitted and defaults to `kubernetes.default`. You **have to** provide a CA certificate in order to connect to the API Server securely.
+The servers `url` can be omitted and defaults to `kubernetes.default`. If no `caBundle` or `caProvider` is specified, the operator uses the system certificate roots from the container image. Both the default (`distroless/static`) and UBI images include standard CA certificates, so connections to servers using well-known CAs (e.g., Let's Encrypt) work without explicit CA configuration.
 For your convenience, each namespace has a ConfigMap `kube-root-ca.crt` that contains the CA certificate of the internal API Server (see `RootCAConfigMap` [feature gate](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/)).
 Use that if you want to connect to the same API server.
 If you want to connect to a remote API Server you need to fetch it and store it inside the cluster as ConfigMap or Secret.
@@ -104,6 +104,30 @@ spec:
           type: ConfigMap
           name: kube-root-ca.crt
           key: ca.crt
+```
+
+!!! note
+    System CA roots only cover certificates signed by well-known CAs. Internal Kubernetes API servers typically use self-signed or cluster-internal CAs — you still need to provide explicit `caBundle` or `caProvider` for those.
+
+If the remote server uses a certificate from a well-known CA, you can omit CA configuration entirely:
+
+```yaml
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: k8s-store-system-ca
+spec:
+  provider:
+    kubernetes:
+      remoteNamespace: default
+      server:
+        url: "https://my-proxy.example.com"
+        # No caBundle or caProvider — uses system CA roots
+      auth:
+        token:
+          bearerToken:
+            name: my-token
+            key: token
 ```
 
 ### Authentication
@@ -362,7 +386,7 @@ kind: PushSecret
 metadata:
   name: example
 spec:
-  refreshInterval: 1h
+  refreshInterval: 1h0m0s
   secretStoreRefs:
     - name: k8s-store-remote-ns
       kind: SecretStore
@@ -377,7 +401,7 @@ spec:
           property: best-pokemon
 ```
 
-To utilize the PushSecret feature effectively, the referenced `SecretStore` requires specific permissions on the target cluster. In particular it requires `create`, `read`, `update` and `delete` permissions on the Secret resource:
+To use the PushSecret feature effectively, the referenced `SecretStore` requires specific permissions on the target cluster. In particular, it requires `create`, `read`, `update` and `delete` permissions on the Secret resource:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -413,7 +437,7 @@ kind: PushSecret
 metadata:
   name: example
 spec:
-  refreshInterval: 1h
+  refreshInterval: 1h0m0s
   secretStoreRefs:
     - name: k8s-store-remote-ns
       kind: SecretStore
@@ -434,7 +458,7 @@ spec:
 
 The Kubernetes provider is able to manage both `metadata.labels` and `metadata.annotations` of the secret on the target cluster.
 
-Users have different preferences on what metadata should be pushed. ESO by default pushes both labels and annotations to the target secret and merges them with the existing metadata.
+Users have different preferences on what metadata should be pushed. ESO, by default, pushes both labels and annotations to the target secret and merges them with the existing metadata.
 
 You can specify the metadata in the `spec.template.metadata` section if you want to decouple it from the existing secret.
 
@@ -461,7 +485,7 @@ spec:
 {% endraw %}
 ```
 
-Further, you can leverage the `.data[].metadata` section to fine-tine the behaviour of the metadata merge strategy. The metadata section is a versioned custom-resource _alike_ structure, the behaviour is detailed below.
+Further, you can leverage the `.data[].metadata` section to fine-tine the behavior of the metadata merge strategy. The metadata section is a versioned custom-resource _similar_ structure, the behavior is detailed below.
 
 ```yaml
 apiVersion: external-secrets.io/v1alpha1
@@ -490,18 +514,17 @@ spec:
 
 ```
 
-
 | Field             | Type                                 | Description                                                                                                                                                                                                                                                                                                                                       |
-| ----------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|-------------------|--------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | sourceMergePolicy | string: `Merge`, `Replace`           | The sourceMergePolicy defines how the metadata of the source secret is merged. `Merge` will merge the metadata of the source secret with the  metadata defined in `.data[].metadata`. With `Replace`, the metadata in `.data[].metadata` replaces the source metadata.                                                                            |
 | targetMergePolicy | string: `Merge`, `Replace`, `Ignore` | The targetMergePolicy defines how ESO merges the metadata produced by the sourceMergePolicy with the target secret. With `Merge`, the source metadata is merged with the existing metadata from the target secret. `Replace` will replace the target metadata with the metadata defined in the source. `Ignore` leaves the target metadata as is. |
 | labels            | `map[string]string`                  | The labels.                                                                                                                                                                                                                                                                                                                                       |
 | annotations       | `map[string]string`                  | The annotations.                                                                                                                                                                                                                                                                                                                                  |
+| remoteNamespace   | string                               | The Namespace in which the remote Secret will created in if defined.                                                                                                                                                                                                                                                                              |
 
 #### Implementation Considerations
 
-When utilizing the PushSecret feature and configuring the permissions for the SecretStore, consider the following:
-
+When using the PushSecret feature and configuring the permissions for the SecretStore, consider the following:
 
 * **RBAC Configuration**: Ensure that the Role-Based Access Control (RBAC) configuration for the SecretStore grants the appropriate permissions for creating, reading, and updating resources in the target cluster.
 

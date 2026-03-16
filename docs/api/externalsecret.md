@@ -50,7 +50,7 @@ metadata:
   name: example
 spec:
   refreshPolicy: Periodic
-  refreshInterval: 1h  # Update every hour
+  refreshInterval: 1h0m0s  # Update every hour
   # other fields...
 ```
 
@@ -75,7 +75,7 @@ spec:
 
 ## Manual Refresh
 
-Regardless of the refresh policy, you can always manually trigger a refresh of the `Kind=Secret` by updating the annotations of the `ExternalSecret`:
+If supported by the configured `refreshPolicy`, you can manually trigger a refresh of the `Kind=Secret` by updating the annotations of the `ExternalSecret`:
 
 ```
 kubectl annotate es my-es force-sync=$(date +%s) --overwrite

@@ -1,11 +1,11 @@
 /*
-Copyright © 2022 ESO Maintainer Team
+Copyright © The ESO Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-	http://www.apache.org/licenses/LICENSE-2.0
+    https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"crypto/tls"
 	"os"
 	"time"
 
@@ -29,7 +30,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	esv1 "github.com/external-secrets/external-secrets/apis/externalsecrets/v1"
@@ -49,7 +50,7 @@ import (
 	"github.com/external-secrets/external-secrets/pkg/controllers/secretstore"
 	"github.com/external-secrets/external-secrets/pkg/controllers/secretstore/cssmetrics"
 	"github.com/external-secrets/external-secrets/pkg/controllers/secretstore/ssmetrics"
-	"github.com/external-secrets/external-secrets/pkg/feature"
+	"github.com/external-secrets/external-secrets/runtime/feature"
 
 	// To allow using gcp auth.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -60,7 +61,12 @@ var (
 	setupLog                              = ctrl.Log.WithName("setup")
 	dnsName                               string
 	certDir                               string
+	liveAddr                              string
 	metricsAddr                           string
+	metricsSecure                         bool
+	metricsCertDir                        string
+	metricsCertName                       string
+	metricsKeyName                        string
 	healthzAddr                           string
 	controllerClass                       string
 	enableLeaderElection                  bool
@@ -76,6 +82,7 @@ var (
 	zapTimeEncoding                       string
 	namespace                             string
 	enableClusterStoreReconciler          bool
+	enableSecretStoreReconciler           bool
 	enableClusterExternalSecretReconciler bool
 	enableClusterPushSecretReconciler     bool
 	enablePushSecretReconciler            bool
@@ -91,6 +98,8 @@ var (
 	certLookaheadInterval                 time.Duration
 	tlsCiphers                            string
 	tlsMinVersion                         string
+	enableHTTP2                           bool
+	allowGenericTargets                   bool
 	watchNamespaces						  []string
 )
 
@@ -113,7 +122,7 @@ var rootCmd = &cobra.Command{
 	Use:   "external-secrets",
 	Short: "operator that reconciles ExternalSecrets and SecretStores",
 	Long:  `For more information visit https://external-secrets.io`,
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, _ []string) {
 		setupLogger()
 
 		ctrlmetrics.SetUpLabelNames(enableExtendedMetricLabels)
@@ -135,12 +144,24 @@ var rootCmd = &cobra.Command{
 			// dont cache any configmaps
 			clientCacheDisableFor = append(clientCacheDisableFor, &v1.ConfigMap{})
 		}
+		metricsOpts := server.Options{
+			BindAddress: metricsAddr,
+		}
+		if metricsSecure {
+			metricsOpts.SecureServing = true
+			metricsOpts.CertDir = metricsCertDir
+			metricsOpts.CertName = metricsCertName
+			metricsOpts.KeyName = metricsKeyName
+		}
 
+		// Disable HTTP/2 if not explicitly enabled
+		if !enableHTTP2 {
+			metricsOpts.TLSOpts = []func(*tls.Config){disableHTTP2}
+		}
 		mgrOpts := ctrl.Options{
-			Scheme: scheme,
-			Metrics: server.Options{
-				BindAddress: metricsAddr,
-			},
+			Scheme:                 scheme,
+			Metrics:                metricsOpts,
+			HealthProbeBindAddress: liveAddr,
 			WebhookServer: webhook.NewServer(webhook.Options{
 				Port: 9443,
 			}),
@@ -184,32 +205,31 @@ var rootCmd = &cobra.Command{
 			}
 		}
 
-		ssmetrics.SetUpMetrics()
-		if err = (&secretstore.StoreReconciler{
-			Client:          mgr.GetClient(),
-			Log:             ctrl.Log.WithName("controllers").WithName("SecretStore"),
-			Scheme:          mgr.GetScheme(),
-			ControllerClass: controllerClass,
-			RequeueInterval: storeRequeueInterval,
-		}).SetupWithManager(mgr, controller.Options{
-			MaxConcurrentReconciles: concurrent,
-			RateLimiter:             ctrlcommon.BuildRateLimiter(),
-		}); err != nil {
-			setupLog.Error(err, errCreateController, "controller", "SecretStore")
-			os.Exit(1)
+		if enableSecretStoreReconciler {
+			ssmetrics.SetUpMetrics()
+			if err = (&secretstore.StoreReconciler{
+				Client:            mgr.GetClient(),
+				Log:               ctrl.Log.WithName("controllers").WithName("SecretStore"),
+				Scheme:            mgr.GetScheme(),
+				ControllerClass:   controllerClass,
+				RequeueInterval:   storeRequeueInterval,
+				PushSecretEnabled: enablePushSecretReconciler,
+			}).SetupWithManager(mgr, ctrlcommon.BuildControllerOptions(concurrent)); err != nil {
+				setupLog.Error(err, errCreateController, "controller", "SecretStore")
+				os.Exit(1)
+			}
 		}
+
 		if enableClusterStoreReconciler {
 			cssmetrics.SetUpMetrics()
 			if err = (&secretstore.ClusterStoreReconciler{
-				Client:          mgr.GetClient(),
-				Log:             ctrl.Log.WithName("controllers").WithName("ClusterSecretStore"),
-				Scheme:          mgr.GetScheme(),
-				ControllerClass: controllerClass,
-				RequeueInterval: storeRequeueInterval,
-			}).SetupWithManager(mgr, controller.Options{
-				MaxConcurrentReconciles: concurrent,
-				RateLimiter:             ctrlcommon.BuildRateLimiter(),
-			}); err != nil {
+				Client:            mgr.GetClient(),
+				Log:               ctrl.Log.WithName("controllers").WithName("ClusterSecretStore"),
+				Scheme:            mgr.GetScheme(),
+				ControllerClass:   controllerClass,
+				RequeueInterval:   storeRequeueInterval,
+				PushSecretEnabled: enablePushSecretReconciler,
+			}).SetupWithManager(mgr, ctrlcommon.BuildControllerOptions(concurrent)); err != nil {
 				setupLog.Error(err, errCreateController, "controller", "ClusterSecretStore")
 				os.Exit(1)
 			}
@@ -219,10 +239,7 @@ var rootCmd = &cobra.Command{
 			Log:        ctrl.Log.WithName("controllers").WithName("GeneratorState"),
 			Scheme:     mgr.GetScheme(),
 			RestConfig: mgr.GetConfig(),
-		}).SetupWithManager(mgr, controller.Options{
-			MaxConcurrentReconciles: concurrent,
-			RateLimiter:             ctrlcommon.BuildRateLimiter(),
-		}); err != nil {
+		}).SetupWithManager(mgr, ctrlcommon.BuildControllerOptions(concurrent)); err != nil {
 			setupLog.Error(err, errCreateController, "controller", "GeneratorState")
 			os.Exit(1)
 		}
@@ -237,10 +254,8 @@ var rootCmd = &cobra.Command{
 			ClusterSecretStoreEnabled: enableClusterStoreReconciler,
 			EnableFloodGate:           enableFloodGate,
 			EnableGeneratorState:      enableGeneratorState,
-		}).SetupWithManager(mgr, controller.Options{
-			MaxConcurrentReconciles: concurrent,
-			RateLimiter:             ctrlcommon.BuildRateLimiter(),
-		}); err != nil {
+			AllowGenericTargets:       allowGenericTargets,
+		}).SetupWithManager(cmd.Context(), mgr, ctrlcommon.BuildControllerOptions(concurrent)); err != nil {
 			setupLog.Error(err, errCreateController, "controller", "ExternalSecret")
 			os.Exit(1)
 		}
@@ -253,10 +268,7 @@ var rootCmd = &cobra.Command{
 				ControllerClass: controllerClass,
 				RestConfig:      mgr.GetConfig(),
 				RequeueInterval: time.Hour,
-			}).SetupWithManager(mgr, controller.Options{
-				MaxConcurrentReconciles: concurrent,
-				RateLimiter:             ctrlcommon.BuildRateLimiter(),
-			}); err != nil {
+			}).SetupWithManager(cmd.Context(), mgr, ctrlcommon.BuildControllerOptions(concurrent)); err != nil {
 				setupLog.Error(err, errCreateController, "controller", "PushSecret")
 				os.Exit(1)
 			}
@@ -269,10 +281,7 @@ var rootCmd = &cobra.Command{
 				Log:             ctrl.Log.WithName("controllers").WithName("ClusterExternalSecret"),
 				Scheme:          mgr.GetScheme(),
 				RequeueInterval: time.Hour,
-			}).SetupWithManager(mgr, controller.Options{
-				MaxConcurrentReconciles: concurrent,
-				RateLimiter:             ctrlcommon.BuildRateLimiter(),
-			}); err != nil {
+			}).SetupWithManager(mgr, ctrlcommon.BuildControllerOptions(concurrent)); err != nil {
 				setupLog.Error(err, errCreateController, "controller", "ClusterExternalSecret")
 				os.Exit(1)
 			}
@@ -287,12 +296,15 @@ var rootCmd = &cobra.Command{
 				Scheme:          mgr.GetScheme(),
 				RequeueInterval: time.Hour,
 				Recorder:        mgr.GetEventRecorderFor("external-secrets-controller"),
-			}).SetupWithManager(mgr, controller.Options{
-				MaxConcurrentReconciles: concurrent,
-			}); err != nil {
+			}).SetupWithManager(mgr, ctrlcommon.BuildControllerOptions(concurrent)); err != nil {
 				setupLog.Error(err, errCreateController, "controller", "ClusterPushSecret")
 				os.Exit(1)
 			}
+		}
+
+		if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+			setupLog.Error(err, "unable to add controller healthz check")
+			os.Exit(1)
 		}
 
 		fs := feature.Features()
@@ -310,12 +322,17 @@ var rootCmd = &cobra.Command{
 	},
 }
 
+// Execute starts the command execution process.
 func Execute() {
 	cobra.CheckErr(rootCmd.Execute())
 }
 
 func init() {
 	rootCmd.Flags().StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
+	rootCmd.Flags().BoolVar(&metricsSecure, "metrics-secure", false, "Enable HTTPS for the metrics endpoint.")
+	rootCmd.Flags().StringVar(&metricsCertDir, "metrics-cert-dir", "", "Directory containing TLS certificate and key for metrics endpoint.")
+	rootCmd.Flags().StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "TLS certificate filename for metrics endpoint.")
+	rootCmd.Flags().StringVar(&metricsKeyName, "metrics-key-name", "tls.key", "TLS key filename for metrics endpoint.")
 	rootCmd.Flags().StringVar(&controllerClass, "controller-class", "default", "The controller is instantiated with a specific controller name and filters ES based on this property")
 	rootCmd.Flags().BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. "+
@@ -323,10 +340,13 @@ func init() {
 	rootCmd.Flags().IntVar(&concurrent, "concurrent", 1, "The number of concurrent reconciles.")
 	rootCmd.Flags().Float32Var(&clientQPS, "client-qps", 50, "QPS configuration to be passed to rest.Client")
 	rootCmd.Flags().IntVar(&clientBurst, "client-burst", 100, "Maximum Burst allowed to be passed to rest.Client")
+	rootCmd.Flags().StringVar(&liveAddr, "live-addr", ":8082", "The address the live endpoint binds to.")
 	rootCmd.Flags().StringVar(&loglevel, "loglevel", "info", "loglevel to use, one of: debug, info, warn, error, dpanic, panic, fatal")
 	rootCmd.Flags().StringVar(&zapTimeEncoding, "zap-time-encoding", "epoch", "Zap time encoding (one of 'epoch', 'millis', 'nano', 'iso8601', 'rfc3339' or 'rfc3339nano')")
-	rootCmd.Flags().StringVar(&namespace, "namespace", "", "watch external secrets scoped in the provided namespace only. ClusterSecretStore can be used but only work if it doesn't reference resources from other namespaces")
+	rootCmd.Flags().
+		StringVar(&namespace, "namespace", "", "watch external secrets scoped in the provided namespace only. ClusterSecretStore can be used but only work if it doesn't reference resources from other namespaces")
 	rootCmd.Flags().BoolVar(&enableClusterStoreReconciler, "enable-cluster-store-reconciler", true, "Enable cluster store reconciler.")
+	rootCmd.Flags().BoolVar(&enableSecretStoreReconciler, "enable-secret-store-reconciler", true, "Enable secret store reconciler.")
 	rootCmd.Flags().BoolVar(&enableClusterExternalSecretReconciler, "enable-cluster-external-secret-reconciler", true, "Enable cluster external secret reconciler.")
 	rootCmd.Flags().BoolVar(&enableClusterPushSecretReconciler, "enable-cluster-push-secret-reconciler", true, "Enable cluster push secret reconciler.")
 	rootCmd.Flags().BoolVar(&enablePushSecretReconciler, "enable-push-secret-reconciler", true, "Enable push secret reconciler.")
@@ -337,9 +357,18 @@ func init() {
 	rootCmd.Flags().BoolVar(&enableFloodGate, "enable-flood-gate", true, "Enable flood gate. External secret will be reconciled only if the ClusterStore or Store have an healthy or unknown state.")
 	rootCmd.Flags().BoolVar(&enableGeneratorState, "enable-generator-state", true, "Whether the Controller should manage GeneratorState")
 	rootCmd.Flags().BoolVar(&enableExtendedMetricLabels, "enable-extended-metric-labels", false, "Enable recommended kubernetes annotations as labels in metrics.")
+	rootCmd.Flags().BoolVar(&enableHTTP2, "enable-http2", false,
+		"If set, HTTP/2 will be enabled for the metrics server")
+	rootCmd.Flags().
+		BoolVar(&allowGenericTargets, "unsafe-allow-generic-targets", false, "Enable support for creating generic resources (ConfigMaps, Custom Resources). WARNING: Using generic resources, please sure all policies are correctly configured.")
 	rootCmd.Flags().StringSliceVar(&watchNamespaces, "watch-namespaces", nil, "Comma-separated list of namespaces to limit ESO to watch only the provided list of namespaces when deployed in cluster wide mode instead of watching all the namespaces which is the default behavior")
 	fs := feature.Features()
 	for _, f := range fs {
 		rootCmd.Flags().AddFlagSet(f.Flags)
 	}
+}
+
+// disableHTTP2 is a TLS configuration function that disables HTTP/2.
+func disableHTTP2(cfg *tls.Config) {
+	cfg.NextProtos = []string{"http/1.1"}
 }

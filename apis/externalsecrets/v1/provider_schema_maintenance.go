@@ -1,9 +1,11 @@
 /*
+Copyright © The ESO Authors
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-	http://www.apache.org/licenses/LICENSE-2.0
+    https://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,11 +21,14 @@ import (
 	"sync"
 )
 
-type MaintenanceStatus bool
+// MaintenanceStatus defines a type for different maintenance states of a provider schema.
+type MaintenanceStatus string
 
+// These are the defined maintenance states for a provider schema.
 const (
-	MaintenanceStatusMaintained    MaintenanceStatus = true
-	MaintenanceStatusNotMaintained MaintenanceStatus = false
+	MaintenanceStatusMaintained    MaintenanceStatus = "Maintained"
+	MaintenanceStatusNotMaintained MaintenanceStatus = "NotMaintained"
+	MaintenanceStatusDeprecated    MaintenanceStatus = "Deprecated"
 )
 
 var maintenance map[string]MaintenanceStatus
@@ -33,6 +38,8 @@ func init() {
 	maintenance = make(map[string]MaintenanceStatus)
 }
 
+// RegisterMaintenanceStatus registers the maintenance status of the provider from the generic store.
+// It panics if the provider is already registered or if there is an error getting the provider name.
 func RegisterMaintenanceStatus(status MaintenanceStatus, storeSpec *SecretStoreProvider) {
 	storeName, err := getProviderName(storeSpec)
 	if err != nil {
@@ -49,6 +56,9 @@ func RegisterMaintenanceStatus(status MaintenanceStatus, storeSpec *SecretStoreP
 	maintenance[storeName] = status
 }
 
+// ForceRegisterMaintenanceStatus registers the maintenance status of the provider from the generic store.
+// It panics if there is an error getting the provider name, it overwrites existing provider status or
+// stores new status for a provider if it exists.
 func ForceRegisterMaintenanceStatus(status MaintenanceStatus, storeSpec *SecretStoreProvider) {
 	storeName, err := getProviderName(storeSpec)
 	if err != nil {
